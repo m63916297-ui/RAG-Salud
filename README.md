@@ -2,6 +2,9 @@
 
 Aplicación de seguimiento de síntomas de salud con chat interactivo, detección de patrones y visualización de tendencias.
 
+Prueba streamlit
+https://rag-salud-ah87rrhjpejswxr4aezkz9.streamlit.app/
+
 ## Características
 
 - 💬 **Chat interactivo** para describir síntomas
