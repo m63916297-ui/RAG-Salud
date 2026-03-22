@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 import os
 from dotenv import load_dotenv
 
@@ -25,7 +25,7 @@ except ImportError:
 load_dotenv()
 
 st.set_page_config(
-    page_title="SaludAI - Seguimiento de Síntomas",
+    page_title="SaludAI - Seguimiento de Salud",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -51,6 +51,13 @@ st.markdown(
         border-radius: 12px;
         border: 1px solid #00C89633;
     }
+    .profile-card {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #00C89633;
+        margin-bottom: 1rem;
+    }
     .alert-critical {
         background: linear-gradient(135deg, #ff4757 0%, #ff6b81 100%);
         padding: 1rem;
@@ -69,6 +76,13 @@ st.markdown(
         background: #262730;
         border-radius: 12px;
         padding: 1rem;
+    }
+    .treatment-box {
+        background: #2d2d44;
+        padding: 0.8rem;
+        border-radius: 8px;
+        border-left: 4px solid #00C896;
+        margin: 0.5rem 0;
     }
 </style>
 """,
@@ -89,11 +103,20 @@ if "zep_client" not in st.session_state:
         except Exception:
             st.session_state.zep_client = None
 
+if "user_profile" not in st.session_state:
+    st.session_state.user_profile = {
+        "nombre": "",
+        "edad": "",
+        "correo": "",
+        "examenes": "",
+        "tratamiento": "",
+    }
+
 pattern_detector = PatternDetector() if PatternDetector else None
 alert_system = AlertSystem() if AlertSystem else None
 
 
-def extract_entry_data(user_input: str) -> Dict:
+def extract_entry_data(user_input: str, profile: Dict) -> Dict:
     symptoms = []
     if pattern_detector:
         symptoms = pattern_detector.extract_symptoms(user_input)
@@ -112,11 +135,16 @@ def extract_entry_data(user_input: str) -> Dict:
         "symptoms": symptoms,
         "category": categories[0] if categories else "general",
         "severity": severity,
+        "nombre": profile.get("nombre", ""),
+        "edad": profile.get("edad", ""),
+        "correo": profile.get("correo", ""),
+        "examenes": profile.get("examenes", ""),
+        "tratamiento": profile.get("tratamiento", ""),
     }
 
 
 def create_symptom_chart(entries: List[Dict]):
-    if not entries:
+    if not entries or len(entries) < 2:
         return None
 
     categories = [e.get("category", "unknown") for e in entries]
@@ -127,14 +155,13 @@ def create_symptom_chart(entries: List[Dict]):
 
     timestamps = [datetime.fromisoformat(e["timestamp"]) for e in entries]
 
-    df = {"Fecha": timestamps, "Categoría": categories, "Severidad": severity_scores}
-
     fig = px.line(
-        x=df["Fecha"],
-        y=df["Severidad"],
-        color=df["Categoría"],
+        x=timestamps,
+        y=severity_scores,
+        color=categories,
         title="Tendencia de Síntomas",
         labels={"y": "Nivel de Severidad", "x": "Fecha"},
+        markers=True,
     )
     fig.update_layout(
         template="plotly_dark", height=300, margin=dict(l=20, r=20, t=40, b=20)
@@ -159,6 +186,49 @@ def create_category_pie(entries: List[Dict]):
     )
     fig.update_layout(
         template="plotly_dark", height=300, margin=dict(l=20, r=20, t=40, b=20)
+    )
+    return fig
+
+
+def create_treatment_timeline(entries: List[Dict]):
+    if not entries:
+        return None
+
+    entries_with_treatment = [e for e in entries if e.get("tratamiento")]
+    if not entries_with_treatment:
+        return None
+
+    timestamps = [
+        datetime.fromisoformat(e["timestamp"]) for e in entries_with_treatment
+    ]
+    treatments = [
+        e.get("tratamiento", "")[:50] + "..."
+        if len(e.get("tratamiento", "")) > 50
+        else e.get("tratamiento", "")
+        for e in entries_with_treatment
+    ]
+
+    fig = go.Figure(
+        data=[
+            go.Scatter(
+                x=timestamps,
+                y=[1] * len(timestamps),
+                mode="markers+text",
+                marker=dict(size=15, color="#00C896"),
+                text=treatments,
+                textposition="top center",
+                textfont=dict(color="white"),
+            )
+        ]
+    )
+
+    fig.update_layout(
+        title="Línea de Tiempo de Tratamientos",
+        template="plotly_dark",
+        height=200,
+        showlegend=False,
+        xaxis_title="Fecha",
+        yaxis=dict(showticklabels=False, showgrid=False),
     )
     return fig
 
@@ -192,12 +262,33 @@ def render_alert(alert: Dict):
 def main():
     st.markdown('<h1 class="main-header">🏥 SaludAI</h1>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="sub-header">Seguimiento inteligente de síntomas con GraphRAG</p>',
+        '<p class="sub-header">Seguimiento inteligente de salud con GraphRAG</p>',
         unsafe_allow_html=True,
     )
 
     with st.sidebar:
-        st.header("Configuración")
+        st.header("👤 Perfil del Paciente")
+
+        with st.container():
+            st.markdown('<div class="profile-card">', unsafe_allow_html=True)
+
+            nombre = st.text_input(
+                "📛 Nombre completo",
+                value=st.session_state.user_profile.get("nombre", ""),
+            )
+            edad = st.text_input(
+                "🎂 Edad", value=st.session_state.user_profile.get("edad", "")
+            )
+            correo = st.text_input(
+                "📧 Correo electrónico",
+                value=st.session_state.user_profile.get("correo", ""),
+            )
+
+            st.session_state.user_profile["nombre"] = nombre
+            st.session_state.user_profile["edad"] = edad
+            st.session_state.user_profile["correo"] = correo
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
         st.subheader("📋 Estadísticas")
         total_entries = len(st.session_state.entries)
@@ -207,7 +298,11 @@ def main():
             unique_symptoms = len(
                 set(e.get("category", "") for e in st.session_state.entries)
             )
+            entries_with_treatment = sum(
+                1 for e in st.session_state.entries if e.get("tratamiento")
+            )
             st.metric("Categorías únicas", unique_symptoms)
+            st.metric("Con tratamiento", entries_with_treatment)
 
         st.subheader("🔑 API Key")
         api_key_input = st.text_input(
@@ -253,74 +348,94 @@ def main():
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("💬 Chat de Síntomas")
+        st.subheader("📝 Registrar Síntomas y Tratamiento")
 
-        chat_container = st.container()
-        with chat_container:
-            for msg in st.session_state.chat_history:
-                if msg["role"] == "user":
-                    with st.chat_message("user", avatar="👤"):
-                        st.write(msg["content"])
-                else:
-                    with st.chat_message("assistant", avatar="🤖"):
-                        st.write(msg["content"])
+        with st.form("symptom_form", clear_on_submit=True):
+            col_a, col_b = st.columns(2)
 
-        if prompt := st.chat_input("Describe tus síntomas...", key="symptom_input"):
-            with st.chat_message("user", avatar="👤"):
-                st.write(prompt)
-
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-
-            entry_data = extract_entry_data(prompt)
-            st.session_state.entries.append(entry_data)
-
-            alerts = {"has_alerts": False, "alerts": []}
-            if alert_system:
-                alerts = alert_system.check_symptoms(prompt)
-                if alerts["has_alerts"]:
-                    for alert in alerts["alerts"]:
-                        render_alert(alert)
-
-            patterns = {"patterns": [], "insights": []}
-            pattern_alerts = []
-            if pattern_detector:
-                patterns = pattern_detector.detect_recurring_patterns(
-                    st.session_state.entries
+            with col_a:
+                examenes = st.text_area(
+                    "🧪 Exámenes realizados",
+                    placeholder="Ej: Análisis de sangre, Radiografía torácica...",
+                    height=100,
                 )
-                pattern_alerts = pattern_detector.generate_alerts(patterns)
 
-            for alert in pattern_alerts:
-                render_alert(alert)
+            with col_b:
+                tratamiento = st.text_area(
+                    "💊 Tratamiento actual",
+                    placeholder="Ej: Paracetamol 500mg cada 8 horas, Ibuprofeno...",
+                    height=100,
+                )
 
-            response = f"📝 **Resumen registrado**\n\n"
-            response += f"Síntomas detectados: {', '.join([s['keyword'] for s in entry_data['symptoms']]) if entry_data['symptoms'] else 'Ninguno específico'}\n\n"
-
-            if entry_data["symptoms"]:
-                response += f"Categoría: {entry_data['category']}\n"
-                response += f"Severidad: {entry_data['severity']}\n"
-                response += f"Duración: {entry_data['symptoms'][0].get('duration', 'no especificada')}\n\n"
-
-            if patterns["insights"]:
-                response += "💡 **Patrones detectados:**\n"
-                for insight in patterns["insights"][:2]:
-                    response += f"- {insight}\n"
-
-            with st.chat_message("assistant", avatar="🤖"):
-                st.write(response)
-
-            st.session_state.chat_history.append(
-                {"role": "assistant", "content": response}
+            sintomas = st.text_area(
+                "🔍 Descripción de síntomas",
+                placeholder="Describe tus síntomas en detalle...",
+                height=120,
             )
 
-            if st.session_state.zep_client:
-                try:
-                    st.session_state.zep_client.add_symptom_entry(prompt)
-                except Exception as e:
-                    st.warning(f"No se pudo guardar en Zep: {str(e)}")
+            submitted = st.form_submit_button("Registrar", use_container_width=True)
 
-    with col2:
+            if submitted and sintomas:
+                st.session_state.user_profile["examenes"] = examenes
+                st.session_state.user_profile["tratamiento"] = tratamiento
+
+                entry_data = extract_entry_data(sintomas, st.session_state.user_profile)
+                st.session_state.entries.append(entry_data)
+
+                st.success("✅ Registro guardado exitosamente")
+
+                with st.chat_message("assistant", avatar="🤖"):
+                    st.write("📝 **Registro Recibido**")
+                    st.write(
+                        f"**Paciente:** {st.session_state.user_profile.get('nombre', 'No especificado')}"
+                    )
+                    if st.session_state.user_profile.get("edad"):
+                        st.write(
+                            f"**Edad:** {st.session_state.user_profile['edad']} años"
+                        )
+                    st.write(f"\n**Síntomas:** {sintomas[:200]}...")
+
+                    if examenes:
+                        st.write(
+                            f"\n**Exámenes:** {examenes[:100]}{'...' if len(examenes) > 100 else ''}"
+                        )
+
+                    if tratamiento:
+                        st.write(
+                            f"\n**Tratamiento:** {tratamiento[:100]}{'...' if len(tratamiento) > 100 else ''}"
+                        )
+
+                    alerts = {"has_alerts": False, "alerts": []}
+                    if alert_system:
+                        alerts = alert_system.check_symptoms(sintomas)
+                        if alerts["has_alerts"]:
+                            for alert in alerts["alerts"]:
+                                render_alert(alert)
+
+                    patterns = {"patterns": [], "insights": []}
+                    if pattern_detector:
+                        patterns = pattern_detector.detect_recurring_patterns(
+                            st.session_state.entries
+                        )
+                        if patterns["insights"]:
+                            st.write("\n**💡 Patrones detectados:**")
+                            for insight in patterns["insights"][:2]:
+                                st.write(f"- {insight}")
+
+                    if st.session_state.zep_client:
+                        try:
+                            full_context = f"Paciente: {st.session_state.user_profile.get('nombre', '')}. "
+                            full_context += f"Síntomas: {sintomas}. "
+                            if examenes:
+                                full_context += f"Exámenes: {examenes}. "
+                            if tratamiento:
+                                full_context += f"Tratamiento: {tratamiento}."
+                            st.session_state.zep_client.add_symptom_entry(full_context)
+                            st.info("📡 Sincronizado con GraphRAG (Zep)")
+                        except Exception:
+                            pass
+
         st.subheader("📈 Tendencias")
-
         if len(st.session_state.entries) >= 2:
             fig_trend = create_symptom_chart(st.session_state.entries)
             if fig_trend:
@@ -328,67 +443,107 @@ def main():
         else:
             st.info("Registra al menos 2 entradas para ver tendencias")
 
-        st.subheader("🥧 Distribución")
+        st.subheader("🥧 Distribución de Síntomas")
         if st.session_state.entries:
             fig_pie = create_category_pie(st.session_state.entries)
             if fig_pie:
                 st.plotly_chart(fig_pie, use_container_width=True)
 
-    st.subheader("🧠 GraphRAG - Relación Síntomas-Tratamientos")
+        st.subheader("💊 Línea de Tiempo de Tratamientos")
+        fig_timeline = create_treatment_timeline(st.session_state.entries)
+        if fig_timeline:
+            st.plotly_chart(fig_timeline, use_container_width=True)
+        else:
+            st.info("Agrega tratamientos para ver la línea de tiempo")
 
+    with col2:
+        st.subheader("🧠 GraphRAG - Red de Conocimiento")
+
+        if st.session_state.entries:
+            with st.expander("Ver red de síntomas-tratamientos"):
+                categories = [
+                    e.get("category", "unknown") for e in st.session_state.entries
+                ]
+                category_counts = {}
+                for cat in categories:
+                    category_counts[cat] = category_counts.get(cat, 0) + 1
+
+                st.markdown("**📌 Síntomas registrados:**")
+                for cat, count in category_counts.items():
+                    st.write(f"- **{cat}**: {count} vez/veces")
+
+                treatments = [
+                    e.get("tratamiento", "")
+                    for e in st.session_state.entries
+                    if e.get("tratamiento")
+                ]
+                if treatments:
+                    st.markdown("\n**💊 Tratamientos:**")
+                    for i, t in enumerate(set(treatments), 1):
+                        st.write(f"{i}. {t[:60]}{'...' if len(t) > 60 else ''}")
+
+                examenes_list = [
+                    e.get("examenes", "")
+                    for e in st.session_state.entries
+                    if e.get("examenes")
+                ]
+                if examenes_list:
+                    st.markdown("\n**🧪 Exámenes:**")
+                    for i, ex in enumerate(set(examenes_list), 1):
+                        st.write(f"{i}. {ex[:60]}{'...' if len(ex) > 60 else ''}")
+
+    st.subheader("📋 Historial Completo")
     if st.session_state.entries:
-        with st.expander("Ver gráfico de conocimiento"):
-            categories = [
-                e.get("category", "unknown") for e in st.session_state.entries
-            ]
-            category_counts = {}
-            for cat in categories:
-                category_counts[cat] = category_counts.get(cat, 0) + 1
-
-            st.markdown("**Red de Síntomas:**")
-
-            nodes_data = []
-            edges_data = []
-
-            for cat, count in category_counts.items():
-                nodes_data.append(f"- **{cat}**: {count} ocurrencias")
-
-            for i, entry in enumerate(st.session_state.entries):
-                if i > 0:
-                    prev_cat = st.session_state.entries[i - 1].get("category", "")
-                    curr_cat = entry.get("category", "")
-                    if prev_cat != curr_cat:
-                        edges_data.append(f"- {prev_cat} → {curr_cat}")
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Nodos (Síntomas):**")
-                for node in nodes_data[:5]:
-                    st.write(node)
-
-            with col2:
-                st.markdown("**Conexiones:**")
-                if edges_data:
-                    for edge in edges_data[:3]:
-                        st.write(edge)
-                else:
-                    st.write("Los síntomas se repiten en la misma categoría")
-
-    st.subheader("📋 Historial de Entradas")
-    if st.session_state.entries:
-        for entry in reversed(st.session_state.entries[-5:]):
+        for entry in reversed(st.session_state.entries[-10:]):
             timestamp = datetime.fromisoformat(entry["timestamp"]).strftime(
                 "%d/%m/%Y %H:%M"
             )
+
             with st.expander(f"📌 {timestamp}"):
-                st.write(f"**Texto:** {entry.get('raw_text', '')}")
+                if entry.get("nombre"):
+                    st.write(f"**Paciente:** {entry['nombre']}")
+                if entry.get("edad"):
+                    st.write(f"**Edad:** {entry['edad']} años")
+                if entry.get("correo"):
+                    st.write(f"**Correo:** {entry['correo']}")
+
+                st.write(f"\n**Síntomas:** {entry.get('raw_text', '')}")
                 st.write(f"**Categoría:** {entry.get('category', 'general')}")
                 st.write(f"**Severidad:** {entry.get('severity', 'media')}")
+
+                if entry.get("examenes"):
+                    st.markdown(
+                        f"**🧪 Exámenes:**\n<div class='treatment-box'>{entry['examenes']}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                if entry.get("tratamiento"):
+                    st.markdown(
+                        f"**💊 Tratamiento:**\n<div class='treatment-box'>{entry['tratamiento']}</div>",
+                        unsafe_allow_html=True,
+                    )
+
                 if entry.get("symptoms"):
                     symptoms_list = [s["keyword"] for s in entry["symptoms"]]
-                    st.write(f"**Síntomas detectados:** {', '.join(symptoms_list)}")
+                    st.write(f"**🔍 Síntomas detectados:** {', '.join(symptoms_list)}")
     else:
-        st.info("Aún no hay entradas registradas. ¡Comienza describiendo tus síntomas!")
+        st.info("Aún no hay entradas registradas. ¡Comienza registrando tus síntomas!")
+
+    with st.expander("📊 Exportar Datos"):
+        if st.session_state.entries:
+            import json
+
+            data_str = json.dumps(
+                st.session_state.entries, indent=2, ensure_ascii=False
+            )
+            st.download_button(
+                "Descargar JSON",
+                data_str,
+                file_name="saludai_registros.json",
+                mime="application/json",
+            )
+        else:
+            st.info("No hay datos para exportar")
 
 
 if __name__ == "__main__":
