@@ -2,6 +2,9 @@
 
 Aplicación web de seguimiento de síntomas de salud con chat interactivo, detección de patrones recurrentes y visualización de tendencias utilizando Zep como motor de GraphRAG.
 
+Streamlit Frontend
+https://rag-salud-ah87rrhjpejswxr4aezkz9.streamlit.app/
+
 ## 🚀 Características
 
 - **💬 Chat Interactivo**: Registro de síntomas mediante descripción natural
