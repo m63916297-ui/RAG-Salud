@@ -1,8 +1,15 @@
 import re
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple
-import pandas as pd
+from typing import List, Dict, Tuple, Optional
+
+try:
+    import pandas as pd
+
+    PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None
+    PANDAS_AVAILABLE = False
 
 
 class PatternDetector:
@@ -92,7 +99,8 @@ class PatternDetector:
         if not entries:
             return {"patterns": [], "insights": []}
 
-        df = pd.DataFrame(entries)
+        if PANDAS_AVAILABLE:
+            pd.DataFrame(entries)
         patterns = []
         insights = []
 
@@ -133,7 +141,7 @@ class PatternDetector:
             },
         }
 
-    def _analyze_severity_trends(self, entries: List[Dict]) -> Dict:
+    def _analyze_severity_trends(self, entries: List[Dict]) -> Optional[Dict]:
         severity_map = {"alta": 3, "media": 2, "baja": 1}
         severities = []
 
@@ -166,7 +174,7 @@ class PatternDetector:
 
         return None
 
-    def _analyze_time_patterns(self, entries: List[Dict]) -> Dict:
+    def _analyze_time_patterns(self, entries: List[Dict]) -> Optional[Dict]:
         time_keywords = {
             "mañana": ["mañana", "al despertar", "al levantarme"],
             "tarde": ["tarde", "durante el día", "mediodía"],

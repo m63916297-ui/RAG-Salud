@@ -1,8 +1,14 @@
 import os
 from datetime import datetime
-from typing import Optional
-from zep_cloud import Zep
-from zep_cloud.client import Thread
+from typing import Optional, Dict, Any
+
+try:
+    from zep_cloud import Zep
+
+    ZEP_AVAILABLE = True
+except ImportError:
+    Zep = None
+    ZEP_AVAILABLE = False
 
 
 class ZepHealthClient:
@@ -22,7 +28,9 @@ class ZepHealthClient:
                 self.user_id, description="Usuario de seguimiento de salud"
             )
 
-    def add_symptom_entry(self, symptom_text: str, session_id: str = None) -> dict:
+    def add_symptom_entry(
+        self, symptom_text: str, session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         timestamp = datetime.now().isoformat()
         entry = {
             "content": symptom_text,
@@ -42,7 +50,9 @@ class ZepHealthClient:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def get_symptom_context(self, current_query: str = None) -> dict:
+    def get_symptom_context(
+        self, current_query: Optional[str] = None
+    ) -> Dict[str, Any]:
         try:
             if current_query:
                 results = self.client.graph.search(
@@ -65,7 +75,7 @@ class ZepHealthClient:
         except Exception as e:
             return {"context": "", "status": "error", "message": str(e)}
 
-    def get_knowledge_graph(self) -> dict:
+    def get_knowledge_graph(self) -> Dict[str, Any]:
         try:
             facts = self.client.graph.search(
                 user_id=self.user_id, query="síntoma tratamiento", limit=50

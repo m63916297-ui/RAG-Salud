@@ -12,8 +12,15 @@ except ImportError:
     ZepHealthClient = None
     get_zep_client = None
 
-from utils.patterns import PatternDetector
-from utils.alerts import AlertSystem
+try:
+    from utils.patterns import PatternDetector
+except ImportError:
+    PatternDetector = None
+
+try:
+    from utils.alerts import AlertSystem
+except ImportError:
+    AlertSystem = None
 
 load_dotenv()
 
@@ -74,22 +81,26 @@ if "entries" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-if "zep_client" not in st.session_state and ZepHealthClient:
-    try:
-        st.session_state.zep_client = get_zep_client()
-    except ValueError as e:
-        st.session_state.zep_client = None
+if "zep_client" not in st.session_state:
+    st.session_state.zep_client = None
+    if ZepHealthClient and get_zep_client:
+        try:
+            st.session_state.zep_client = get_zep_client()
+        except Exception:
+            st.session_state.zep_client = None
 
-pattern_detector = PatternDetector()
-alert_system = AlertSystem()
+pattern_detector = PatternDetector() if PatternDetector else None
+alert_system = AlertSystem() if AlertSystem else None
 
 
 def extract_entry_data(user_input: str) -> Dict:
-    symptoms = pattern_detector.extract_symptoms(user_input)
+    symptoms = []
+    if pattern_detector:
+        symptoms = pattern_detector.extract_symptoms(user_input)
 
     severity = "media"
     for entry in symptoms:
-        if entry["severity"]:
+        if entry.get("severity"):
             severity = entry["severity"]
             break
 
@@ -216,7 +227,7 @@ def main():
                     st.error(f"Error de conexión: {str(e)}")
 
         st.subheader("📊 Puntuación de Salud")
-        if total_entries > 0:
+        if total_entries > 0 and alert_system:
             health_score = alert_system.generate_health_score(st.session_state.entries)
             score = health_score["score"]
 
@@ -263,15 +274,20 @@ def main():
             entry_data = extract_entry_data(prompt)
             st.session_state.entries.append(entry_data)
 
-            alerts = alert_system.check_symptoms(prompt)
-            if alerts["has_alerts"]:
-                for alert in alerts["alerts"]:
-                    render_alert(alert)
+            alerts = {"has_alerts": False, "alerts": []}
+            if alert_system:
+                alerts = alert_system.check_symptoms(prompt)
+                if alerts["has_alerts"]:
+                    for alert in alerts["alerts"]:
+                        render_alert(alert)
 
-            patterns = pattern_detector.detect_recurring_patterns(
-                st.session_state.entries
-            )
-            pattern_alerts = pattern_detector.generate_alerts(patterns)
+            patterns = {"patterns": [], "insights": []}
+            pattern_alerts = []
+            if pattern_detector:
+                patterns = pattern_detector.detect_recurring_patterns(
+                    st.session_state.entries
+                )
+                pattern_alerts = pattern_detector.generate_alerts(patterns)
 
             for alert in pattern_alerts:
                 render_alert(alert)

@@ -1,6 +1,13 @@
-from typing import List, Dict
-from datetime import datetime, timedelta
-import pandas as pd
+from typing import List, Dict, Optional, Any
+from datetime import datetime
+
+try:
+    import pandas as pd
+
+    PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None
+    PANDAS_AVAILABLE = False
 
 
 class AlertSystem:
@@ -17,9 +24,9 @@ class AlertSystem:
             "max_daily_entries": 10,
         }
 
-    def check_symptoms(self, text: str) -> Dict:
+    def check_symptoms(self, text: str) -> Dict[str, Any]:
         text_lower = text.lower()
-        alerts = []
+        alerts: List[Dict[str, Any]] = []
 
         for symptom in self.alert_thresholds["critical_symptoms"]:
             if symptom in text_lower:
@@ -35,72 +42,109 @@ class AlertSystem:
 
         return {"has_alerts": len(alerts) > 0, "alerts": alerts}
 
-    def analyze_trends(self, entries: List[Dict]) -> Dict:
+    def analyze_trends(self, entries: List[Dict]) -> Dict[str, Any]:
         if not entries:
             return {"trends": [], "summary": {}}
 
-        df = pd.DataFrame(entries)
-        trends = []
+        trends: List[Dict[str, Any]] = []
 
-        if "category" in df.columns:
-            category_counts = df["category"].value_counts()
+        if PANDAS_AVAILABLE:
+            df = pd.DataFrame(entries)
 
-            if len(category_counts) > 1:
-                dominant = category_counts.iloc[0]
-                total = len(df)
-                percentage = (dominant / total) * 100
+            if "category" in df.columns:
+                category_counts = df["category"].value_counts()
 
-                if percentage >= 60:
+                if len(category_counts) > 1:
+                    dominant = category_counts.iloc[0]
+                    total = len(df)
+                    percentage = (dominant / total) * 100
+
+                    if percentage >= 60:
+                        trends.append(
+                            {
+                                "type": "dominant_symptom",
+                                "symptom": category_counts.index[0],
+                                "percentage": round(percentage, 1),
+                                "message": f"El {percentage:.1f}% de los síntomas registrados pertenecen a una misma categoría",
+                            }
+                        )
+
+            if "severity" in df.columns:
+                severity_scores = {"alta": 3, "media": 2, "baja": 1}
+                df["severity_score"] = df["severity"].map(severity_scores).fillna(2)
+
+                if len(df) >= 3:
+                    recent_avg = df.tail(3)["severity_score"].mean()
+                    overall_avg = df["severity_score"].mean()
+
+                    if recent_avg > overall_avg * 1.2:
+                        trends.append(
+                            {
+                                "type": "worsening_trend",
+                                "message": "Los síntomas recientes son más severos que el promedio",
+                                "severity_change": round(recent_avg - overall_avg, 2),
+                            }
+                        )
+                    elif recent_avg < overall_avg * 0.8:
+                        trends.append(
+                            {
+                                "type": "improving_trend",
+                                "message": "Los síntomas recientes son menos severos",
+                                "severity_change": round(overall_avg - recent_avg, 2),
+                            }
+                        )
+
+            total_entries = len(df)
+            date_range = "Sin datos"
+            if "timestamp" in df.columns and len(df) > 0:
+                date_range = f"{df['timestamp'].min()} - {df['timestamp'].max()}"
+        else:
+            categories = [e.get("category", "") for e in entries]
+            if categories:
+                from collections import Counter
+
+                category_counts = Counter(categories)
+                dominant = category_counts.most_common(1)[0]
+                percentage = (dominant[1] / len(entries)) * 100
+
+                if percentage >= 60 and len(category_counts) > 1:
                     trends.append(
                         {
                             "type": "dominant_symptom",
-                            "symptom": category_counts.index[0],
+                            "symptom": dominant[0],
                             "percentage": round(percentage, 1),
-                            "message": f"El {percentage:.1f}% de los síntomas registrados pertenecen a una misma categoría",
+                            "message": f"El {percentage:.1f}% de los síntomas pertenecen a una categoría",
                         }
                     )
 
-        if "severity" in df.columns:
-            severity_scores = {"alta": 3, "media": 2, "baja": 1}
-            df["severity_score"] = df["severity"].map(severity_scores).fillna(2)
+            severities = [e.get("severity", "media") for e in entries]
+            severity_map = {"alta": 3, "media": 2, "baja": 1}
+            severity_nums = [severity_map.get(s, 2) for s in severities]
 
-            if len(df) >= 3:
-                recent_avg = df.tail(3)["severity_score"].mean()
-                overall_avg = df["severity_score"].mean()
-
-                if recent_avg > overall_avg * 1.2:
-                    trends.append(
-                        {
-                            "type": "worsening_trend",
-                            "message": "Los síntomas recientes son más severos que el promedio",
-                            "severity_change": round(recent_avg - overall_avg, 2),
-                        }
-                    )
-                elif recent_avg < overall_avg * 0.8:
-                    trends.append(
-                        {
-                            "type": "improving_trend",
-                            "message": "Los síntomas recientes son menos severos",
-                            "severity_change": round(overall_avg - recent_avg, 2),
-                        }
-                    )
+            total_entries = len(entries)
+            date_range = "Sin datos"
+            if entries and "timestamp" in entries[0]:
+                date_range = f"{entries[0]['timestamp']} - {entries[-1]['timestamp']}"
 
         return {
             "trends": trends,
             "summary": {
-                "total_entries": len(df),
-                "date_range": f"{df.get('timestamp', [datetime.now()] * len(df)).min()} - {df.get('timestamp', [datetime.now()] * len(df)).max()}"
-                if len(df) > 0
-                else "Sin datos",
+                "total_entries": total_entries,
+                "date_range": date_range,
             },
         }
 
-    def generate_health_score(self, entries: List[Dict]) -> Dict:
+    def generate_health_score(self, entries: List[Dict]) -> Dict[str, Any]:
         if not entries:
-            return {"score": 100, "status": "Sin datos", "factors": []}
+            return {
+                "score": 100,
+                "status": "Sin datos",
+                "factors": [],
+                "interpretation": "",
+            }
 
         score = 100
-        factors = []
+        factors: List[str] = []
 
         severity_map = {"alta": -20, "media": -10, "baja": -5}
 
